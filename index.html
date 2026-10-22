@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Washington Wildfire Risk Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Roboto','Segoe UI',Arial,sans-serif; }
+    #map { position: absolute; inset: 0; background: #e8e4dc; z-index: 0; }
+    /* keep floating UI above Leaflet's panes (which sit ~z-index 400+) */
+    .search-shell, .year-card, .legend, .info-bubble, .overall-strip { z-index: 1000 !important; }
+    .info-bubble { z-index: 1001 !important; }
+    /* Google-style rounded zoom buttons, kept clear of the year/legend cards */
+    .leaflet-control-zoom { border:none !important; box-shadow:0 2px 6px rgba(0,0,0,0.3); border-radius:8px; overflow:hidden; }
+    .leaflet-control-zoom a { color:#444 !important; }
+    .leaflet-bottom.leaflet-right { margin-bottom: 90px; margin-right: 10px; }
+
+    /* Basemap style switcher (bottom-left) */
+    .leaflet-control-layers {
+      border:none !important; border-radius:10px !important;
+      box-shadow:0 2px 10px rgba(0,0,0,0.3) !important; padding:8px 12px !important;
+      font-family:'Roboto','Segoe UI',sans-serif; font-size:0.8rem;
+    }
+    .leaflet-control-layers label { margin:2px 0; cursor:pointer; }
+    .leaflet-control-layers-base label span { color:#333; }
+    .leaflet-bottom.leaflet-left { margin-bottom: 90px; margin-left: 10px; }
+
+    /* ── Floating search bar (Google-Maps style) ── */
+    .search-shell {
+      position: absolute; top: 14px; left: 14px; z-index: 5;
+      width: 360px; max-width: calc(100% - 28px);
+    }
+    .search-bar {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      padding: 0 10px; height: 48px;
+    }
+    .search-bar .logo { font-size: 1.3rem; }
+    .search-bar input {
+      border: none; outline: none; flex: 1; font-size: 0.95rem;
+      background: transparent; color: #222;
+    }
+    .search-bar .clear {
+      cursor: pointer; color: #888; font-size: 1.1rem; border: none;
+      background: none; display: none;
+    }
+    .search-results {
+      background: #fff; border-radius: 10px; margin-top: 6px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3); overflow: hidden;
+      max-height: 320px; overflow-y: auto; display: none;
+    }
+    .search-results.open { display: block; }
+    .sr-item {
+      padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #eee;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .sr-item:hover { background: #f3f6fb; }
+    .sr-name { font-size: 0.9rem; color: #222; }
+    .sr-sub  { font-size: 0.72rem; color: #888; }
+    .sr-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 10px; color:#fff; white-space:nowrap; }
+
+    /* ── Controls row under the search bar ── */
+    .controls {
+      margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .control-card {
+      background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      padding: 7px 10px; font-size: 0.78rem; color: #333;
+    }
+    .control-card label { display:block; font-size: 0.62rem; color:#888; text-transform: uppercase; letter-spacing:.5px; margin-bottom:2px;}
+    .control-card select {
+      border: 1px solid #ddd; border-radius: 6px; padding: 3px 6px; font-size: 0.82rem; color:#222;
+      background:#fff;
+    }
+
+    /* ── Year slider card ── */
+    .year-card {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 5; background: #fff; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3); padding: 10px 18px;
+      display: flex; align-items: center; gap: 14px; min-width: 340px;
+    }
+    .year-card .yr-label { font-weight: 700; font-size: 0.95rem; color: #c0392b; min-width: 118px; }
+    .year-card input[type=range] { flex: 1; accent-color: #c0392b; }
+    .year-card .yr-play {
+      border:none; background:#c0392b; color:#fff; width:30px; height:30px;
+      border-radius:50%; cursor:pointer; font-size:0.85rem;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      position: absolute; bottom: 24px; right: 14px; z-index: 5;
+      background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      padding: 10px 14px; font-size: 0.75rem; color: #333;
+    }
+    .legend h4 { font-size: 0.78rem; margin-bottom: 7px; color:#c0392b; }
+    .legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .legend-swatch { width:16px; height:16px; border-radius:3px; flex-shrink:0; }
+
+    /* ── Floating info bubble ── */
+    .info-bubble {
+      position: fixed; top: 14px; right: 14px; z-index: 6;
+      width: 360px; max-width: calc(100% - 28px); max-height: calc(100vh - 120px);
+      background: #fff; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+      overflow: hidden; display: none; flex-direction: column;
+      animation: pop .18s ease-out;
+    }
+    .info-bubble.open { display: flex; }
+    @keyframes pop { from { transform: scale(.96); opacity:0 } to { transform: scale(1); opacity:1 } }
+
+    .ib-header {
+      padding: 14px 16px; color:#fff; position: relative;
+      background: linear-gradient(135deg,#c0392b,#7b1109);
+    }
+    .ib-header h2 { font-size: 1.15rem; }
+    .ib-header .sub { font-size: 0.75rem; opacity:.9; margin-top:2px; }
+    .ib-close {
+      position:absolute; top:10px; right:12px; background:rgba(255,255,255,.2);
+      border:none; color:#fff; width:26px; height:26px; border-radius:50%;
+      cursor:pointer; font-size:0.9rem;
+    }
+    .ib-body { overflow-y: auto; padding: 0; }
+
+    .ib-year-banner {
+      background: #2c3e50; color:#fff; padding: 12px 16px;
+    }
+    .yb-title { font-size:0.8rem; font-weight:700; margin-bottom:8px; }
+    .yb-grid { display:flex; gap:10px; text-align:center; }
+    .yb-grid > div { flex:1; }
+    .yb-v { font-size:1rem; font-weight:800; }
+    .yb-l { font-size:0.6rem; opacity:.8; text-transform:uppercase; letter-spacing:.5px; }
+
+    .ib-forecast {
+      background: #fff3f1; padding: 14px 16px; border-bottom: 1px solid #f1d9d5;
+      text-align: center;
+    }
+    .ib-prob { font-size: 2.3rem; font-weight: 800; line-height: 1; }
+    .ib-prob-label { font-size: 0.72rem; color:#888; text-transform: uppercase; letter-spacing:.5px; margin-top:4px; }
+    .ib-trend { display:inline-block; margin-top:8px; font-size:0.78rem; padding:3px 10px; border-radius:12px; font-weight:600; }
+    .trend-rising  { background:#fdecea; color:#c0392b; }
+    .trend-falling { background:#e8f8f0; color:#1e8449; }
+    .trend-stable  { background:#eef2f7; color:#555; }
+
+    .ib-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:#eee; }
+    .ib-cell { background:#fff; padding:10px 14px; }
+    .ib-cell .l { font-size:0.65rem; color:#999; text-transform:uppercase; letter-spacing:.5px; }
+    .ib-cell .v { font-size:1rem; font-weight:700; color:#222; margin-top:2px; }
+
+    .ib-section { padding: 12px 16px; border-top: 1px solid #eee; }
+    .ib-section h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing:.5px; color:#c0392b; margin-bottom:9px; }
+
+    /* cause bars */
+    .cause-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem; }
+    .cause-label { width:120px; flex-shrink:0; color:#444; font-size:0.76rem; }
+    .cause-bar-bg { flex:1; background:#eee; border-radius:3px; height:8px; }
+    .cause-bar { height:8px; border-radius:3px; background:#e67e22; }
+    .cause-pct { width:34px; text-align:right; font-size:0.72rem; color:#888; }
+
+    /* month sparkline */
+    .months-chart { display:flex; gap:3px; align-items:flex-end; height:54px; }
+    .mbar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; }
+    .mbar { width:100%; background:#c0392b; border-radius:2px 2px 0 0; min-height:2px; }
+    .mlbl { font-size:0.5rem; color:#999; }
+
+    /* year sparkline */
+    .year-chart { display:flex; gap:2px; align-items:flex-end; height:50px; }
+    .ybar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; }
+    .ybar { width:100%; background:#e67e22; border-radius:1px; min-height:1px; }
+
+    /* budget */
+    .budget-total { text-align:center; margin-bottom:12px; }
+    .bt-range { font-size:1.5rem; font-weight:800; color:#b9770e; line-height:1.1; }
+    .bt-label { font-size:0.68rem; color:#999; margin-top:3px; }
+    .budget-row { display:flex; align-items:center; gap:9px; margin-bottom:8px; }
+    .budget-icon { font-size:1rem; flex-shrink:0; }
+    .budget-main { flex:1; }
+    .budget-label { font-size:0.76rem; color:#444; margin-bottom:3px; }
+    .budget-barbg { background:#eee; border-radius:3px; height:7px; }
+    .budget-bar { height:7px; border-radius:3px; min-width:2px; }
+    .budget-amt { font-size:0.7rem; color:#777; text-align:right; white-space:nowrap; flex-shrink:0; width:92px; }
+
+    /* wildlife */
+    .eco-blurb { font-size:0.74rem; color:#666; line-height:1.4; margin-bottom:10px;
+                 background:#f6f8fa; padding:8px 10px; border-radius:7px; border-left:3px solid #27ae60; }
+    .eco-name { font-size:0.72rem; font-weight:700; color:#1e8449; margin-bottom:8px; }
+    .species-row { display:flex; gap:9px; align-items:flex-start; margin-bottom:9px; }
+    .species-icon { font-size:1.1rem; line-height:1.3; flex-shrink:0; }
+    .species-main { flex:1; }
+    .species-name { font-size:0.84rem; font-weight:600; color:#222; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+    .species-note { font-size:0.73rem; color:#666; line-height:1.35; margin-top:2px; }
+    .status-badge { font-size:0.58rem; font-weight:700; padding:1px 6px; border-radius:9px; color:#fff; white-space:nowrap; }
+    .impact-badge { font-size:0.6rem; font-weight:700; padding:1px 7px; border-radius:9px; color:#fff; white-space:nowrap; }
+    .impact-harm    { background:#c0392b; }
+    .impact-mixed   { background:#e67e22; }
+    .impact-benefit { background:#27ae60; }
+
+    /* tips */
+    .tips-tabs { display:flex; border-top:1px solid #eee; }
+    .tips-tab { flex:1; padding:9px; text-align:center; font-size:0.72rem; cursor:pointer; background:none; border:none; color:#888; border-bottom:2px solid transparent; }
+    .tips-tab.active { color:#c0392b; border-bottom-color:#c0392b; font-weight:600; }
+    .tips-content { display:none; padding:10px 16px 16px; }
+    .tips-content.active { display:block; }
+    .tips-content ul { padding-left:16px; }
+    .tips-content li { font-size:0.78rem; color:#444; margin-bottom:5px; line-height:1.4; }
+    .tips-content a { color:#c0392b; }
+
+    /* ── Stats strip (overall) ── */
+    .overall-strip {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 4; display: flex; gap: 6px;
+    }
+    .os-chip {
+      background: rgba(13,27,42,.85); color:#fff; border-radius:9px;
+      padding:7px 13px; text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.3);
+    }
+    .os-chip .v { font-size:1rem; font-weight:800; color:#ff6b57; }
+    .os-chip .l { font-size:0.58rem; opacity:.75; text-transform:uppercase; letter-spacing:.5px; }
+
+    /* ── Toggle knobs (fire-locations + live-fires) ── */
+    .toggle-knob::before {
+      content: ""; position: absolute; height: 14px; width: 14px;
+      left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s;
+    }
+    #active-toggle:checked + #active-slider,
+    #points-toggle:checked + #points-slider { background: #c0392b; }
+    #active-toggle:checked + #active-slider::before,
+    #points-toggle:checked + #points-slider::before { transform: translateX(18px); }
+
+    /* ── Active-fire markers ── */
+    .fire-dot-wrap { position: relative; }
+    .fire-pulse {
+      position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+      border-radius:50%; background:rgba(255,80,0,.45);
+      animation: pulse 1.6s ease-out infinite;
+    }
+    @keyframes pulse {
+      0%   { width:10px; height:10px; opacity:.8; }
+      100% { width:44px; height:44px; opacity:0; }
+    }
+
+    /* ── Loading / error ── */
+    #loading {
+      position: fixed; inset:0; background:#0d1b2a; color:#ddd; z-index:9999;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:30px; text-align:center;
+    }
+    .spinner { width:48px; height:48px; border:4px solid #1a3a5c; border-top-color:#ff6b57; border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width:640px){
+      .search-shell{ width: calc(100% - 28px); }
+      .info-bubble{ width: calc(100% - 28px); top:auto; bottom:14px; max-height:60%; }
+      .overall-strip{ display:none; }
+      .year-card{ min-width: calc(100% - 28px); bottom:auto; top:120px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><p>Loading Washington wildfire data…</p></div>
+
+<script src="wildlife_data.js"></script>
+
+<div id="map"></div>
+
+<!-- Overall stats strip -->
+<div class="overall-strip" id="overall-strip"></div>
+
+<!-- Search -->
+<div class="search-shell">
+  <div class="search-bar">
+    <span class="logo">🔥</span>
+    <input id="search-input" type="text" placeholder="Search a county (e.g. Okanogan)…" autocomplete="off" />
+    <button class="clear" id="search-clear">✕</button>
+  </div>
+  <div class="search-results" id="search-results"></div>
+
+  <div class="controls">
+    <div class="control-card">
+      <label>Color by</label>
+      <select id="metric-select">
+        <option value="riskPct">Relative risk</option>
+        <option value="probAny">Forecast % (next yr)</option>
+        <option value="count">Total fires</option>
+        <option value="acres">Acres burned</option>
+      </select>
+    </div>
+    <div class="control-card">
+      <label>Cause filter</label>
+      <select id="cause-select"><option value="all">All causes</option></select>
+    </div>
+    <div class="control-card" style="display:flex;align-items:center;gap:7px;">
+      <div>
+        <label>Fire locations</label>
+        <span id="points-status" style="font-size:.72rem;color:#888;">select a year</span>
+      </div>
+      <label class="switch" style="position:relative;display:inline-block;width:38px;height:20px;">
+        <input type="checkbox" id="points-toggle" style="opacity:0;width:0;height:0;" />
+        <span id="points-slider" class="toggle-knob" style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:20px;transition:.2s;"></span>
+      </label>
+    </div>
+    <div class="control-card" style="display:flex;align-items:center;gap:7px;">
+      <div>
+        <label>Live fires (now)</label>
+        <span id="active-status" style="font-size:.72rem;color:#888;">off</span>
+      </div>
+      <label class="switch" style="position:relative;display:inline-block;width:38px;height:20px;">
+        <input type="checkbox" id="active-toggle" style="opacity:0;width:0;height:0;" />
+        <span id="active-slider" class="toggle-knob" style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:20px;transition:.2s;"></span>
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- Year slider -->
+<div class="year-card">
+  <button class="yr-play" id="yr-play" title="Play through years">▶</button>
+  <span class="yr-label" id="yr-label">All years</span>
+  <input type="range" id="yr-range" min="0" max="1" value="0" />
+</div>
+
+<!-- Legend -->
+<div class="legend" id="legend"></div>
+
+<!-- Floating info bubble -->
+<div class="info-bubble" id="info-bubble">
+  <div class="ib-header">
+    <button class="ib-close" onclick="closeBubble()">✕</button>
+    <h2 id="ib-title">County</h2>
+    <div class="sub" id="ib-sub"></div>
+  </div>
+  <div class="ib-body" id="ib-body"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════
+const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+const MSHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+
+let map;
+let STATS = null;          // fire_stats.json
+let COUNTY_GEO = null;     // wa_counties.geojson
+let FIRE_POINTS = null;    // fire_points.json (lazy-loaded)
+let currentMetric = 'riskPct';
+let currentCause = 'all';
+let currentYear = 'all';   // 'all' or a number
+let playTimer = null;
+
+// ═══════════════════════════════════════════════════════════════════
+//  DATA LOAD (runs before the map callback too; both must finish)
+// ═══════════════════════════════════════════════════════════════════
+const dataReady = Promise.all([
+  fetch('fire_stats.json').then(r => r.json()),
+  fetch('wa_counties.geojson').then(r => r.json())
+]).then(([stats, geo]) => { STATS = stats; COUNTY_GEO = geo; })
+  .catch(err => {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#ff6b57">⚠️ Could not load data files.<br><small>${err.message}</small><br>
+       <small>Run <code style="color:#ffd">python3 build_data.py</code> and serve the folder over http.</small></div>`;
+    throw err;
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+//  MAP INIT  (Leaflet — no API key required)
+// ═══════════════════════════════════════════════════════════════════
+let countyLayer = null;        // Leaflet GeoJSON layer of counties
+const countyLayersByName = {}; // name -> Leaflet layer, for highlighting
+
+function initMap() {
+  dataReady.then(() => {
+    document.getElementById('loading').style.display = 'none';
+
+    map = L.map('map', { zoomControl: false, attributionControl: true })
+           .setView([47.4, -120.4], 7);
+    // Google-style: zoom buttons bottom-right
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // ── Basemap options (all free, no API key) ──
+    // "Street" = OpenStreetMap standard road map (streets & labels emphasized)
+    const baseStreet = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 });
+
+    const baseSatellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics', maxZoom: 19 });
+
+    baseStreet.addTo(map);  // default
+
+    L.control.layers(
+      { 'Street': baseStreet, 'Satellite': baseSatellite },
+      null,
+      { position: 'bottomleft', collapsed: false }
+    ).addTo(map);
+
+    // County choropleth as a GeoJSON layer
+    // (declared here; fit the full state to its bounds once built)
+    countyLayer = L.geoJSON(COUNTY_GEO, {
+      style: featureStyle,
+      onEachFeature: (feature, layer) => {
+        const name = feature.properties.NAME;
+        countyLayersByName[name] = layer;
+
+        layer.on('click', () => selectCounty(name));
+        layer.on('mouseover', e => {
+          layer.setStyle({ weight: 2.5, color: '#fff' });
+          layer.bringToFront();
+          const c = STATS.counties[name];
+          if (c) showHoverTip(e.latlng, name, c);
+          showCountyStrip(name);          // top chips reflect this county
+        });
+        layer.on('mouseout', () => {
+          countyLayer.resetStyle(layer);
+          if (selectedName === name) highlightCounty(name); // keep selection ring
+          map.closePopup();
+          buildOverallStrip();            // revert chips to statewide overview
+        });
+      },
+    }).addTo(map);
+
+    // Start fitted to the whole state
+    map.fitBounds(countyLayer.getBounds(), { padding: [20, 20] });
+
+    buildControls();
+    buildYearSlider();
+    buildLegend();
+    buildOverallStrip();
+    restyle();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  METRIC VALUE per county (respects year + cause filters)
+// ═══════════════════════════════════════════════════════════════════
+function countyValue(c, metric) {
+  if (!c) return 0;
+
+  // Year + cause filtering only affects count/acres directly.
+  // risk & forecast are precomputed over the full record.
+  if (metric === 'riskPct')  return c.riskPct;
+  if (metric === 'probAny')  return c.forecast.probAny;
+
+  if (currentYear === 'all') {
+    if (metric === 'count') return applyCauseScale(c, c.count);
+    if (metric === 'acres') return c.acres;
+  } else {
+    if (metric === 'count') return applyCauseScale(c, c.yearly[currentYear] || 0);
+    if (metric === 'acres') return c.acresByYear[currentYear] || 0;
+  }
+  return 0;
+}
+
+// cause filter scales the count by that cause's share (approximation across years)
+function applyCauseScale(c, base) {
+  if (currentCause === 'all') return base;
+  const total = c.count || 1;
+  const causeCount = (c.causes.find(x => x[0] === currentCause) || [null, 0])[1];
+  return Math.round(base * (causeCount / total));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CHOROPLETH STYLING
+// ═══════════════════════════════════════════════════════════════════
+function featureStyle(feature) {
+  const name = feature.properties.NAME;
+  const c = STATS.counties[name];
+  const v = countyValue(c, currentMetric);
+  const max = currentMetricMax();
+  const t = max > 0 ? Math.min(1, v / max) : 0;
+  return {
+    fillColor: rampColor(t),
+    fillOpacity: v > 0 ? 0.72 : 0.12,
+    color: '#0d1b2a',   // stroke color
+    weight: 1,
+  };
+}
+
+function currentMetricMax() {
+  let max = 0;
+  for (const name in STATS.counties) {
+    const v = countyValue(STATS.counties[name], currentMetric);
+    if (v > max) max = v;
+  }
+  return max;
+}
+
+// red–orange–yellow ramp (0 = cool, 1 = hot)
+function rampColor(t) {
+  // stops: 0 green, .35 yellow, .6 orange, .8 red, 1 dark red
+  const stops = [
+    [0.0, [39,174,96]],
+    [0.3, [241,196,15]],
+    [0.55,[230,126,34]],
+    [0.8, [231,76,60]],
+    [1.0, [139,0,0]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const [t0,c0] = stops[i-1], [t1,c1] = stops[i];
+      const f = (t - t0) / (t1 - t0 || 1);
+      const rgb = c0.map((ch,j) => Math.round(ch + (c1[j]-ch)*f));
+      return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    }
+  }
+  return 'rgb(139,0,0)';
+}
+
+function restyle() {
+  if (countyLayer) countyLayer.setStyle(featureStyle);
+  if (selectedName) highlightCounty(selectedName);
+  buildLegend();
+  buildOverallStrip();
+}
+
+let selectedName = null;
+function highlightCounty(name) {
+  const layer = countyLayersByName[name];
+  if (layer) { layer.setStyle({ weight: 3, color: '#fff' }); layer.bringToFront(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════════════════════════════
+function buildControls() {
+  // populate cause filter from union of all county causes
+  const causeSet = new Set();
+  for (const name in STATS.counties)
+    STATS.counties[name].causes.forEach(([c]) => causeSet.add(c));
+  const sel = document.getElementById('cause-select');
+  [...causeSet].sort().forEach(c => {
+    const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+  });
+
+  document.getElementById('metric-select').addEventListener('change', e => {
+    currentMetric = e.target.value; restyle();
+  });
+  sel.addEventListener('change', e => { currentCause = e.target.value; restyle(); });
+
+  document.getElementById('active-toggle').addEventListener('change', e => {
+    if (e.target.checked) loadActiveFires();
+    else clearActiveFires();
+    buildLegend();
+  });
+
+  document.getElementById('points-toggle').addEventListener('change', e => {
+    if (e.target.checked) showFirePoints();
+    else clearFirePoints();
+    buildLegend();
+  });
+
+  // search
+  const input = document.getElementById('search-input');
+  const clear = document.getElementById('search-clear');
+  input.addEventListener('input', () => { renderSearch(input.value); clear.style.display = input.value ? 'block':'none'; });
+  input.addEventListener('focus', () => renderSearch(input.value));
+  clear.addEventListener('click', () => { input.value=''; clear.style.display='none'; renderSearch(''); input.focus(); });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-shell')) document.getElementById('search-results').classList.remove('open');
+  });
+}
+
+function renderSearch(q) {
+  const box = document.getElementById('search-results');
+  const names = Object.keys(STATS.counties)
+    .filter(n => n.toLowerCase().includes(q.toLowerCase()))
+    .sort((a,b) => STATS.counties[b].count - STATS.counties[a].count);
+
+  if (!names.length) { box.classList.remove('open'); return; }
+  box.innerHTML = names.slice(0, 12).map(n => {
+    const c = STATS.counties[n];
+    return `<div class="sr-item" onclick="selectCounty('${n}')">
+      <div><div class="sr-name">${title(n)} County</div>
+      <div class="sr-sub">${c.count.toLocaleString()} fires · ${c.forecast.probAny}% next-yr chance</div></div>
+      <span class="sr-badge" style="background:${riskColor(c.riskLevel)}">${c.riskLevel}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  YEAR SLIDER (0 = all years, then minYear..maxYear)
+// ═══════════════════════════════════════════════════════════════════
+function buildYearSlider() {
+  const yrs = STATS.meta.years;
+  const range = document.getElementById('yr-range');
+  range.min = 0; range.max = yrs.length; range.value = 0;  // 0 = all
+  range.addEventListener('input', () => {
+    const i = parseInt(range.value);
+    currentYear = i === 0 ? 'all' : yrs[i-1];
+    document.getElementById('yr-label').textContent = i === 0 ? 'All years' : currentYear;
+    // When scrubbing to a specific year, color counties by how much they
+    // burned THAT year (acres). Returning to "All years" restores the
+    // user's chosen metric.
+    if (i !== 0) {
+      currentMetric = 'acres';
+      const ms = document.getElementById('metric-select');
+      if (ms) ms.value = 'acres';
+    }
+    restyle();
+    // refresh an open county bubble so its year banner updates (no re-pan)
+    if (selectedName) selectCounty(selectedName, true);
+    // update the year-aware fire-location dots if that layer is on
+    if (pointsEnabled()) showFirePoints();
+    // live fires only make sense for the present — hide them for past years
+    updateLiveFireAvailability();
+  });
+  document.getElementById('yr-play').addEventListener('click', togglePlay);
+}
+
+function togglePlay() {
+  const btn = document.getElementById('yr-play');
+  const range = document.getElementById('yr-range');
+  if (playTimer) { clearInterval(playTimer); playTimer=null; btn.textContent='▶'; return; }
+  btn.textContent='⏸';
+  if (parseInt(range.value) === 0) range.value = 1;
+  playTimer = setInterval(() => {
+    let v = parseInt(range.value) + 1;
+    if (v > parseInt(range.max)) v = 1;
+    range.value = v; range.dispatchEvent(new Event('input'));
+  }, 900);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  LEGEND + OVERALL STRIP
+// ═══════════════════════════════════════════════════════════════════
+function buildLegend() {
+  const labels = {
+    riskPct: 'Relative Fire Risk',
+    probAny: 'Forecast % (next year)',
+    count:   'Total Fires' + (currentYear!=='all' ? ` (${currentYear})` : ''),
+    acres:   'Acres Burned' + (currentYear!=='all' ? ` (${currentYear})` : ''),
+  };
+  const max = currentMetricMax();
+  const fmt = v => currentMetric==='acres' ? Math.round(v).toLocaleString()
+                 : (currentMetric==='probAny'||currentMetric==='riskPct') ? Math.round(v)+'%'
+                 : Math.round(v).toLocaleString();
+  document.getElementById('legend').innerHTML = `
+    <h4>${labels[currentMetric]}</h4>
+    ${[1,0.8,0.55,0.3,0].map(t => `
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:${rampColor(t)}"></div>
+        ${fmt(max*t)}
+      </div>`).join('')}
+    <div class="legend-item" style="margin-top:4px;color:#999">
+      <div class="legend-swatch" style="background:#ccc;opacity:.4"></div> no data
+    </div>
+    ${pointsEnabled() && currentYear !== 'all' ? `
+    <div class="legend-item" style="margin-top:6px;border-top:1px solid #eee;padding-top:6px">
+      <div class="legend-swatch" style="background:#ff3b00;border-radius:50%"></div> fire location (${currentYear})
+    </div>` : ''}
+    ${(() => {
+      const t = document.getElementById('active-toggle');
+      const thisYear = new Date().getFullYear();
+      const isPast = (currentYear !== 'all' && currentYear < thisYear);
+      return (t && t.checked && !isPast) ? `
+        <div class="legend-item" style="margin-top:6px;border-top:1px solid #eee;padding-top:6px">
+          <div class="legend-swatch" style="background:#ff3b00;border-radius:50%;border:2px solid #fff"></div> live fire (now)
+        </div>` : '';
+    })()}`;
+}
+
+function buildOverallStrip() {
+  const m = STATS.meta;
+  const yrTxt = currentYear==='all' ? `${m.minYear}–${m.maxYear}` : currentYear;
+  let fires = m.totalFires, acres = m.totalAcres;
+  if (currentYear !== 'all') {
+    fires = 0; acres = 0;
+    for (const n in STATS.counties) {
+      fires += STATS.counties[n].yearly[currentYear] || 0;
+      acres += STATS.counties[n].acresByYear[currentYear] || 0;
+    }
+  }
+  const dmg = damageRange(acres);
+  const dmgShort = `${money(dmg.low)}–${money(dmg.high)}`;
+
+  // 4th chip:
+  //   All years  -> county with the highest next-year forecast
+  //   One year   -> county that burned the most acres THAT year
+  let chip4Value, chip4Label;
+  if (currentYear === 'all') {
+    let top = null;
+    for (const n in STATS.counties) {
+      const c = STATS.counties[n];
+      if (!top || c.forecast.probAny > top.forecast.probAny ||
+         (c.forecast.probAny === top.forecast.probAny && c.count > top.count)) top = c;
+    }
+    chip4Value = title(top.name);
+    chip4Label = 'Highest forecast';
+  } else {
+    let top = null, topAcres = -1;
+    for (const n in STATS.counties) {
+      const a = STATS.counties[n].acresByYear[currentYear] || 0;
+      if (a > topAcres) { topAcres = a; top = STATS.counties[n]; }
+    }
+    chip4Value = topAcres > 0 ? title(top.name) : '—';
+    chip4Label = `Most burned ${currentYear}`;
+  }
+
+  document.getElementById('overall-strip').innerHTML = `
+    <div class="os-chip"><div class="v">${fires.toLocaleString()}</div><div class="l">Fires ${yrTxt}</div></div>
+    <div class="os-chip"><div class="v">${acres>=1000?(acres/1000).toFixed(0)+'K':acres}</div><div class="l">Acres ${yrTxt}</div></div>
+    <div class="os-chip"><div class="v" style="font-size:.82rem">${dmgShort}</div><div class="l">Est. damage ${yrTxt}</div></div>
+    <div class="os-chip"><div class="v">${chip4Value}</div><div class="l">${chip4Label}</div></div>`;
+}
+
+// When hovering a county, show ITS data in the top strip (respects year).
+function showCountyStrip(name) {
+  const c = STATS.counties[name];
+  if (!c) return;
+  const yrTxt = currentYear === 'all' ? 'all-time' : currentYear;
+  const fires = currentYear === 'all' ? c.count : (c.yearly[currentYear] || 0);
+  const acres = currentYear === 'all' ? c.acres : (c.acresByYear[currentYear] || 0);
+  const dmg = damageRange(acres);
+
+  document.getElementById('overall-strip').innerHTML = `
+    <div class="os-chip"><div class="v">${title(name)}</div><div class="l">County (${yrTxt})</div></div>
+    <div class="os-chip"><div class="v">${fires.toLocaleString()}</div><div class="l">Fires</div></div>
+    <div class="os-chip"><div class="v">${acres>=1000?(acres/1000).toFixed(1)+'K':Math.round(acres)}</div><div class="l">Acres</div></div>
+    <div class="os-chip"><div class="v" style="font-size:.78rem">${money(dmg.low)}–${money(dmg.high)}</div><div class="l">Est. damage</div></div>
+    <div class="os-chip"><div class="v" style="color:${riskColor(c.riskLevel)}">${c.riskLevel}</div><div class="l">Risk</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HOVER TIP
+// ═══════════════════════════════════════════════════════════════════
+function showHoverTip(latLng, name, c) {
+  // When a specific year is selected, show THAT year's acres/fires.
+  let detail;
+  if (currentYear !== 'all') {
+    const yAcres = Math.round(c.acresByYear[currentYear] || 0);
+    const yFires = c.yearly[currentYear] || 0;
+    detail = `<b>${currentYear}:</b> ${yAcres.toLocaleString()} acres burned · ${yFires.toLocaleString()} fires`;
+  } else {
+    detail = `${c.count.toLocaleString()} fires · top cause: ${c.topCause}`;
+  }
+
+  L.popup({ closeButton: false, autoPan: false, offset: [0, -4] })
+    .setLatLng(latLng)
+    .setContent(`<div style="font-family:Roboto,sans-serif;color:#222;min-width:160px">
+      <b>${title(name)} County</b><br>
+      <span style="color:${riskColor(c.riskLevel)};font-weight:700">${c.riskLevel} risk</span> ·
+      ${c.forecast.probAny}% next-yr chance<br>
+      <small>${detail}</small>
+    </div>`)
+    .openOn(map);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  COUNTY DETAIL BUBBLE
+// ═══════════════════════════════════════════════════════════════════
+function selectCounty(name, refreshOnly) {
+  const c = STATS.counties[name];
+  if (!c) return;
+  document.getElementById('search-results').classList.remove('open');
+  selectedName = name;
+
+  // pan/zoom to county (skip when this is just a data refresh, e.g. year scrub)
+  const layer = countyLayersByName[name];
+  if (refreshOnly) { /* no camera move */ } else
+  if (layer && layer.getBounds) map.flyToBounds(layer.getBounds(), { maxZoom: 9, duration: 0.8 });
+  else map.flyTo([c.lat, c.lon], 8);
+
+  const months = MONTHS.map(m => c.months[m] || 0);
+  const maxMo = Math.max(...months, 1);
+  const years = STATS.meta.years;
+  const yearVals = years.map(y => c.yearly[y] || 0);
+  const maxYr = Math.max(...yearVals, 1);
+  const maxCause = c.causes[0] ? c.causes[0][1] : 1;
+  const fc = c.forecast;
+  const trendTxt = { rising:'📈 Rising trend', falling:'📉 Falling trend', stable:'➡️ Stable trend' }[fc.trend];
+
+  document.getElementById('ib-title').textContent = `${title(name)} County`;
+  document.getElementById('ib-sub').innerHTML =
+    `<span style="font-weight:700">${c.riskLevel} RISK</span> · ${c.count.toLocaleString()} fires since ${STATS.meta.minYear}`;
+  document.querySelector('.ib-header').style.background =
+    `linear-gradient(135deg, ${riskColor(c.riskLevel)}, #5a0c05)`;
+
+  // Year-specific banner (shown only when a single year is selected)
+  let yearBanner = '';
+  if (currentYear !== 'all') {
+    const yFires = c.yearly[currentYear] || 0;
+    const yAcres = c.acresByYear[currentYear] || 0;
+    yearBanner = `
+      <div class="ib-year-banner">
+        <div class="yb-title">📆 ${currentYear} in ${title(name)} County</div>
+        <div class="yb-grid">
+          <div><div class="yb-v">${yFires.toLocaleString()}</div><div class="yb-l">fires</div></div>
+          <div><div class="yb-v">${Math.round(yAcres).toLocaleString()}</div><div class="yb-l">acres burned</div></div>
+          <div><div class="yb-v" style="color:#b9770e">${damageText(yAcres)}</div><div class="yb-l">est. damage</div></div>
+        </div>
+      </div>`;
+  }
+
+  document.getElementById('ib-body').innerHTML = `
+    ${yearBanner}
+    <div class="ib-forecast">
+      <div class="ib-prob" style="color:${riskColor(c.riskLevel)}">${fc.probAny}%</div>
+      <div class="ib-prob-label">chance of ≥1 fire next year (forecast)</div>
+      <span class="ib-trend trend-${fc.trend}">${trendTxt} · ~${fc.predictedCount} fires predicted</span>
+    </div>
+
+    <div class="ib-grid">
+      <div class="ib-cell"><div class="l">Relative Risk</div><div class="v" style="color:${riskColor(c.riskLevel)}">${c.riskPct}%</div></div>
+      <div class="ib-cell"><div class="l">Avg Fires / Year</div><div class="v">${c.avgAnnual}</div></div>
+      <div class="ib-cell"><div class="l">Acres Burned</div><div class="v">${c.acres.toLocaleString()}</div></div>
+      <div class="ib-cell"><div class="l">Top Cause</div><div class="v" style="font-size:.85rem">${c.topCause}</div></div>
+      <div class="ib-cell"><div class="l">Peak Months</div><div class="v" style="font-size:.8rem">${c.peakMonths.map(title).join(', ')||'—'}</div></div>
+      <div class="ib-cell"><div class="l">Recent 3-yr Avg</div><div class="v">${fc.recentAvg}</div></div>
+      <div class="ib-cell"><div class="l">County Population</div><div class="v">${(c.population||0).toLocaleString()}</div></div>
+      <div class="ib-cell"><div class="l">Est. People Exposed</div><div class="v" style="color:#c0392b">${(fc.budget.peopleExposed||0).toLocaleString()}</div></div>
+    </div>
+
+    ${renderBudget(fc.budget)}
+
+    <div class="ib-section">
+      <h3>🔥 Cause of Fires</h3>
+      ${c.causes.slice(0,6).map(([cause,cnt]) => `
+        <div class="cause-row">
+          <div class="cause-label">${cause}</div>
+          <div class="cause-bar-bg"><div class="cause-bar" style="width:${Math.round(cnt/maxCause*100)}%"></div></div>
+          <div class="cause-pct">${Math.round(cnt/c.count*100)}%</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="ib-section">
+      <h3>📅 When Fires Happen (by month)</h3>
+      <div class="months-chart">
+        ${months.map((v,i) => `<div class="mbar-wrap">
+          <div class="mbar" style="height:${Math.round(v/maxMo*44)}px" title="${MONTHS[i]}: ${v}"></div>
+          <div class="mlbl">${MSHORT[i]}</div></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="ib-section">
+      <h3>📈 Fires by Year (${years[0]}–${years[years.length-1]})</h3>
+      <div class="year-chart">
+        ${yearVals.map((v,i) => `<div class="ybar-wrap">
+          <div class="ybar" style="height:${Math.round(v/maxYr*44)}px" title="${years[i]}: ${v}"></div></div>`).join('')}
+      </div>
+    </div>
+
+    ${renderWildlife(name)}
+
+    <div class="tips-tabs">
+      <button class="tips-tab active" onclick="tab(this,'t-pub')">👥 Public</button>
+      <button class="tips-tab" onclick="tab(this,'t-ff')">🧯 Firefighters</button>
+      <button class="tips-tab" onclick="tab(this,'t-evac')">🚗 Evacuation</button>
+    </div>
+    <div id="t-pub" class="tips-content active"><ul>
+      <li>Never leave campfires unattended — drown, stir, and feel before leaving.</li>
+      <li>Don't burn debris on windy days or during burn bans.</li>
+      <li>Clear 30 ft of dry brush around your home (defensible space).</li>
+      <li>Keep roofs and gutters free of dry leaves and needles.</li>
+      <li>Report smoke immediately — 911 or WA DNR 1-800-562-6010.</li>
+      <li>Get alerts at <a href="https://mil.wa.gov/alerts" target="_blank">WA Emergency Alerts</a>.</li>
+    </ul></div>
+    <div id="t-ff" class="tips-content"><ul>
+      <li>Watch Red Flag Warning days — peak risk ${c.peakMonths.map(title).join('–')||'summer'}.</li>
+      <li>Pre-position resources before this county's peak months.</li>
+      <li>Top local ignition source: <b>${c.topCause}</b> — target prevention accordingly.</li>
+      <li>Use ICS early; coordinate DNR / USFS / tribal protection zones.</li>
+      <li>Establish escape routes & safety zones before engaging.</li>
+    </ul></div>
+    <div id="t-evac" class="tips-content"><ul>
+      <li>Know your zone: <a href="https://www.ezonemanager.com/Washington" target="_blank">eZone Manager WA</a>.</li>
+      <li>Level 1 (Ready): pack a go-bag — docs, meds, water, charger.</li>
+      <li>Level 2 (Set): load vehicles, move livestock, be ready to leave.</li>
+      <li>Level 3 (Go!): leave now, don't wait for a knock.</li>
+      <li>Use alternate routes; fire can close primary roads fast.</li>
+    </ul></div>
+  `;
+
+  document.getElementById('info-bubble').classList.add('open');
+  // always show the new county's info from the top
+  document.getElementById('ib-body').scrollTop = 0;
+
+  // highlight on map
+  if (countyLayer) countyLayer.setStyle(featureStyle);
+  highlightCounty(name);
+}
+
+function closeBubble() {
+  document.getElementById('info-bubble').classList.remove('open');
+  selectedName = null;
+  if (countyLayer) countyLayer.setStyle(featureStyle);
+  // zoom back out to show the whole state
+  if (countyLayer && countyLayer.getBounds) {
+    map.flyToBounds(countyLayer.getBounds(), { padding: [20, 20], duration: 0.8 });
+  } else {
+    map.flyTo([47.4, -120.4], 7);
+  }
+}
+function tab(btn, id) {
+  document.querySelectorAll('.tips-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tips-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active'); document.getElementById(id).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HISTORICAL FIRE LOCATIONS  (from fire_points.json, year-aware)
+//  Shows every recorded fire for the SELECTED year as a dot that
+//  changes as you scrub the year slider.
+// ═══════════════════════════════════════════════════════════════════
+let firePointLayer = null;
+
+function setPointsStatus(txt, color) {
+  const el = document.getElementById('points-status');
+  el.textContent = txt; el.style.color = color || '#888';
+}
+
+function pointsEnabled() {
+  const t = document.getElementById('points-toggle');
+  return t && t.checked;
+}
+
+// Called when toggled on, and whenever the year changes while on.
+function showFirePoints() {
+  if (!pointsEnabled()) return;
+
+  if (currentYear === 'all') {
+    clearFirePoints(true);
+    setPointsStatus('pick a year', '#999');
+    return;
+  }
+
+  // lazy-load the points file once
+  if (!FIRE_POINTS) {
+    setPointsStatus('loading…', '#e67e22');
+    fetch('fire_points.json')
+      .then(r => r.json())
+      .then(data => { FIRE_POINTS = data; renderFirePoints(); })
+      .catch(() => setPointsStatus('unavailable', '#999'));
+  } else {
+    renderFirePoints();
+  }
+}
+
+function renderFirePoints() {
+  clearFirePoints(true);
+  if (!pointsEnabled() || currentYear === 'all' || !FIRE_POINTS) return;
+
+  const pts = FIRE_POINTS[String(currentYear)] || [];
+  firePointLayer = L.layerGroup();
+
+  pts.forEach(([lat, lon, acres, name, county, cause, month]) => {
+    const r = acres >= 10000 ? 11 : acres >= 1000 ? 8 : acres >= 100 ? 6 : acres >= 10 ? 4.5 : 3;
+    L.circleMarker([lat, lon], {
+      radius: r,
+      fillColor: '#ff3b00',
+      color: '#7b1109',
+      weight: 0.6,
+      fillOpacity: 0.7,
+    }).bindPopup(`
+      <div style="font-family:Roboto,sans-serif;color:#222;min-width:180px">
+        <b style="color:#c0392b">${title(name)}</b><br>
+        <small>${county} County · ${month} ${currentYear}</small>
+        <table style="font-size:.82rem;width:100%;border-collapse:collapse;margin-top:5px">
+          <tr><td>🌲 Acres</td><td style="text-align:right"><b>${acres.toLocaleString()}</b></td></tr>
+          <tr><td>⚡ Cause</td><td style="text-align:right">${cause}</td></tr>
+        </table>
+      </div>`).addTo(firePointLayer);
+  });
+
+  firePointLayer.addTo(map);
+  setPointsStatus(`${pts.length.toLocaleString()} fires in ${currentYear}`, '#c0392b');
+}
+
+function clearFirePoints(keepStatus) {
+  if (firePointLayer) { map.removeLayer(firePointLayer); firePointLayer = null; }
+  if (!keepStatus) setPointsStatus(currentYear === 'all' ? 'select a year' : 'off', '#888');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  LIVE ACTIVE FIRES  (NIFC / WFIGS current incident locations)
+// ═══════════════════════════════════════════════════════════════════
+const NIFC_URL = 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/' +
+  'WFIGS_Incident_Locations_Current/FeatureServer/0/query';
+let activeMarkers = [];
+
+// Live fires are today's incidents, so they only make sense on "All years"
+// or the current calendar year. For any past year: hide the markers and
+// disable the toggle (with a note). Restore when returning to the present.
+function updateLiveFireAvailability() {
+  const toggle = document.getElementById('active-toggle');
+  const card = toggle.closest('.control-card');
+  const thisYear = new Date().getFullYear();
+  const isPast = (currentYear !== 'all' && currentYear < thisYear);
+
+  if (isPast) {
+    if (toggle.checked) clearActiveFires(true);  // hide markers but keep the user's toggle intent
+    toggle.disabled = true;
+    if (card) card.style.opacity = '0.5';
+    setActiveStatus('N/A for past years', '#999');
+  } else {
+    toggle.disabled = false;
+    if (card) card.style.opacity = '1';
+    if (toggle.checked) loadActiveFires();        // re-show if the user had it on
+    else setActiveStatus('off', '#888');
+  }
+  buildLegend();
+}
+
+function setActiveStatus(txt, color) {
+  const el = document.getElementById('active-status');
+  el.textContent = txt;
+  el.style.color = color || '#888';
+}
+
+function loadActiveFires() {
+  setActiveStatus('loading…', '#e67e22');
+  clearActiveFires(true);
+
+  const params = new URLSearchParams({
+    where: "POOState='US-WA' AND IncidentTypeCategory='WF'",
+    outFields: 'IncidentName,FireCause,IncidentSize,PercentContained,FireDiscoveryDateTime,POOCounty,IncidentShortDescription',
+    returnGeometry: 'true',
+    outSR: '4326',
+    f: 'json',
+  });
+
+  fetch(`${NIFC_URL}?${params}`)
+    .then(r => r.json())
+    .then(data => {
+      const feats = (data.features || []).filter(f => f.geometry && f.geometry.x);
+
+      feats.forEach(f => {
+        const a = f.attributes, g = f.geometry;
+        const acres = a.IncidentSize || a.DiscoveryAcres || 0;
+        const r = acres >= 10000 ? 11 : acres >= 1000 ? 9 : acres >= 100 ? 7 : 5;
+        const contained = (a.PercentContained ?? null) === null ? 'Unknown' : a.PercentContained + '%';
+
+        const marker = L.circleMarker([g.y, g.x], {
+          radius: r,
+          fillColor: '#ff3b00',
+          color: '#fff',
+          weight: 1.5,
+          fillOpacity: 0.9,
+          pane: 'markerPane',
+        }).bindPopup(`
+          <div style="font-family:Roboto,sans-serif;color:#222;min-width:200px;max-width:260px">
+            <div style="font-weight:700;color:#c0392b;font-size:1rem">🔥 ${title(a.IncidentName || 'Active Fire')}</div>
+            <div style="font-size:.74rem;color:#888;margin-bottom:6px">
+              ${a.POOCounty ? title(a.POOCounty)+' County · ' : ''}discovered ${fmtDate(a.FireDiscoveryDateTime)}
+            </div>
+            <table style="font-size:.82rem;width:100%;border-collapse:collapse">
+              <tr><td>🌲 Size</td><td style="text-align:right"><b>${Math.round(acres).toLocaleString()} ac</b></td></tr>
+              <tr><td>🧯 Contained</td><td style="text-align:right">${contained}</td></tr>
+              <tr><td>⚡ Cause</td><td style="text-align:right">${a.FireCause || 'Under investigation'}</td></tr>
+            </table>
+            ${a.IncidentShortDescription ? `<div style="font-size:.74rem;color:#555;margin-top:6px">${a.IncidentShortDescription}</div>` : ''}
+            <div style="font-size:.66rem;color:#aaa;margin-top:6px">Source: NIFC / WFIGS (live)</div>
+          </div>`);
+
+        marker.addTo(map);
+        activeMarkers.push(marker);
+      });
+
+      if (feats.length) {
+        setActiveStatus(`${feats.length} burning`, '#c0392b');
+      } else {
+        setActiveStatus('none active', '#27ae60');
+      }
+    })
+    .catch(err => {
+      setActiveStatus('unavailable', '#999');
+      console.warn('Active fire fetch failed:', err);
+    });
+}
+
+function clearActiveFires(keepStatus) {
+  activeMarkers.forEach(m => map.removeLayer(m));
+  activeMarkers = [];
+  if (!keepStatus) setActiveStatus('off', '#888');
+}
+
+function fmtDate(ts) {
+  if (!ts) return 'unknown';
+  try { return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+  catch { return 'unknown'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  BUDGET / RESCUE COST SECTION
+// ═══════════════════════════════════════════════════════════════════
+function money(n) {
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + Math.round(n/1e3) + 'K';
+  return '$' + Math.round(n).toLocaleString();
+}
+
+// Rough estimated fire DAMAGE (property, timber, resource loss) from acres
+// burned. Ballpark western-US figure ~ $5,000–$15,000 per acre. Returns a
+// {low, high} range. This is a planning estimate, not an official loss figure.
+function damageRange(acres) {
+  return { low: acres * 5000, high: acres * 15000 };
+}
+function damageText(acres) {
+  if (!acres) return '$0';
+  const d = damageRange(acres);
+  return `${money(d.low)}–${money(d.high)}`;
+}
+
+function renderBudget(b) {
+  if (!b) return '';
+  const evacLabel = b.peopleExposed
+    ? `People / evacuation <span style="color:#999;font-weight:400">(~${b.peopleExposed.toLocaleString()} exposed)</span>`
+    : 'People / evacuation';
+  const parts = [
+    { icon:'🧯', label:'Fire suppression', d:b.suppression, color:'#c0392b' },
+    { icon:'🚗', label:evacLabel, d:b.evacuation, color:'#e67e22' },
+    { icon:'🦌', label:'Wildlife / habitat', d:b.wildlife, color:'#27ae60' },
+  ];
+  return `
+    <div class="ib-section" style="background:#fffaf0;border-top:1px solid #f1e4cf;">
+      <h3>💰 Estimated Response Budget (next year)</h3>
+      <div class="budget-total">
+        <div class="bt-range">${money(b.totalLow)} – ${money(b.totalHigh)}</div>
+        <div class="bt-label">estimated to protect people &amp; wildlife · based on ~${b.predictedAcres.toLocaleString()} predicted acres</div>
+      </div>
+      ${parts.map(p => `
+        <div class="budget-row">
+          <div class="budget-icon">${p.icon}</div>
+          <div class="budget-main">
+            <div class="budget-label">${p.label}</div>
+            <div class="budget-barbg"><div class="budget-bar" style="width:${Math.round(p.d.high / b.totalHigh * 100)}%;background:${p.color}"></div></div>
+          </div>
+          <div class="budget-amt">${money(p.d.low)}–${money(p.d.high)}</div>
+        </div>`).join('')}
+      <div style="font-size:.64rem;color:#b08;color:#aaa;margin-top:6px;line-height:1.35">
+        Rough planning estimate from predicted fire activity (ballpark per-acre &amp; per-incident
+        response costs) — not an official budget.
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WILDLIFE SECTION  (from wildlife_data.js)
+// ═══════════════════════════════════════════════════════════════════
+function renderWildlife(countyName) {
+  if (typeof getCountyWildlife !== 'function') return '';
+  const eco = getCountyWildlife(countyName);
+  if (!eco) return '';
+
+  const impactLabel = { harm:'At risk', mixed:'Mixed', benefit:'Adapts' };
+
+  const rows = eco.species.map(sp => `
+    <div class="species-row">
+      <div class="species-icon">${speciesIcon(sp.name)}</div>
+      <div class="species-main">
+        <div class="species-name">${sp.name}
+          ${statusBadge(sp.status)}
+          <span class="impact-badge impact-${sp.impact}">${sp.level || impactLabel[sp.impact]}</span>
+        </div>
+        <div class="species-note">${sp.note}</div>
+      </div>
+    </div>`).join('');
+
+  // count how many are legally protected (endangered/threatened/sensitive)
+  const protectedCount = eco.species.filter(s => ['Endangered','Threatened','Sensitive'].includes(s.status)).length;
+
+  return `
+    <div class="ib-section">
+      <h3>🦌 Wildlife &amp; Habitat at Risk</h3>
+      <div class="eco-name">Region: ${eco.label}
+        ${protectedCount ? `<span style="color:#c0392b;font-weight:700"> · ${protectedCount} protected species</span>` : ''}
+      </div>
+      <div class="eco-blurb">${eco.blurb}</div>
+      ${rows}
+      <div style="font-size:.64rem;color:#aaa;margin-top:4px;">
+        Status per WA/federal listings. Curated reference by ecological region — not live tracking.
+      </div>
+    </div>`;
+}
+
+function statusBadge(status) {
+  if (!status || status === 'Stable' || status === 'Habitat') return '';
+  const cfg = {
+    Endangered: { c:'#8b0000', t:'🛑 Endangered' },
+    Threatened: { c:'#c0392b', t:'⚠️ Threatened' },
+    Sensitive:  { c:'#e67e22', t:'● Sensitive' },
+  }[status];
+  if (!cfg) return '';
+  return `<span class="status-badge" style="background:${cfg.c}">${cfg.t}</span>`;
+}
+
+function speciesIcon(name) {
+  const n = name.toLowerCase();
+  if (n.includes('grouse'))               return '🐦';
+  if (n.includes('rabbit'))               return '🐇';
+  if (n.includes('deer'))                 return '🦌';
+  if (n.includes('elk'))                  return '🦌';
+  if (n.includes('owl'))                  return '🦉';
+  if (n.includes('bear'))                 return '🐻';
+  if (n.includes('squirrel'))             return '🐿️';
+  if (n.includes('lynx'))                 return '🐈';
+  if (n.includes('wolverine'))            return '🦡';
+  if (n.includes('goat'))                 return '🐐';
+  if (n.includes('sheep'))                return '🐏';
+  if (n.includes('murrelet'))             return '🐦';
+  if (n.includes('salmon'))               return '🐟';
+  if (n.includes('sagebrush') || n.includes('prairie')) return '🌿';
+  if (n.includes('pine') || n.includes('forest'))       return '🌲';
+  return '🐾';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function title(s){ return (s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()); }
+function riskColor(l){ return {CRITICAL:'#8b0000',HIGH:'#e74c3c',MEDIUM:'#e67e22',LOW:'#27ae60'}[l]||'#888'; }
+
+// Kick off once the DOM + Leaflet are ready (no API key needed).
+window.addEventListener('load', initMap);
+</script>
+
+</body>
+</html>

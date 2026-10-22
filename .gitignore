@@ -1,0 +1,12 @@
+# Temporary build artifact (re-downloadable; see README)
+us_counties.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Logs
+*.log
