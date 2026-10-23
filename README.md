@@ -1,8 +1,8 @@
-# 🔥 Washington State Wildfire Risk Map
+# Washington State Wildfire Risk Map
 
-An interactive web map that shows where wildfires happen across Washington
-State, how likely each county is to burn, and what's at stake — for the public
-and for firefighters.
+A web map that shows where wildfires happen across Washington
+State, how likely each county is to burn. This was a project for the AWS Kiro Buildathon 
+that happened on 10/21/26.
 
 Built from **~30,500 real fire records (2008–2026)** published by the
 Washington Department of Natural Resources (DNR).
@@ -15,16 +15,21 @@ Washington Department of Natural Resources (DNR).
 
 ## What it does
 
-- 🗺️ **County map** colored by fire risk, with **Street** and **Satellite** views.
-- 🔎 **Search** any of Washington's 39 counties.
-- 📊 **Click a county** for a detailed card: forecast, risk level, causes,
+-  **County map** colored by fire risk
+-  **Search** any of Washington's 39 counties.
+-  **Click a county** for a detailed card: forecast, risk level, causes,
   monthly/yearly fire patterns, estimated response budget, affected population,
   and at-risk wildlife.
-- 🎚️ **Year slider (2008–2026)** — scrub through time and watch the map change.
-- 📍 **Fire locations layer** — see every individual fire for a selected year,
+-  **Year slider (2008–2026)** — scrub through time and watch the map change.
+-  **Fire locations layer** — see every individual fire for a selected year,
   as dots that move as you change the year.
-- 🚒 **Live fires (now)** — real-time active wildfires in WA from the national feed.
-- 🖱️ **Hover a county** — the top stats bar updates to that county instantly.
+-  **Live fires (now)** — real-time active wildfires in WA from the national feed.
+-  **Hover a county** — the top stats bar updates to that county instantly.
+
+---
+
+## Live Demo
+- https://youtu.be/8RNYvv2JVvw
 
 ---
 
