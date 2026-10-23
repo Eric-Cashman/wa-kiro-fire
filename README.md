@@ -1,6 +1,6 @@
 # Washington State Wildfire Risk Map
 
-A web map that shows where wildfires happen across Washington
+A webpage that shows where wildfires happen across Washington
 State, how likely each county is to burn. This was a project for the AWS Kiro Buildathon 
 that happened on 10/21/26.
 
